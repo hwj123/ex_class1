@@ -805,6 +805,7 @@ int getSunPosition::draw_coordinate_sys(cv::Point2f point_data[11], cv::Mat &fra
 
 int getSunPosition::sunPositionProcess(int init_num, std::string fileName, cv::Point2f point_data[])
 {
+     
     cv::VideoCapture capture(fileName); // load video
     std::cout << fileName << std::endl;
     if (!capture.isOpened()) {
@@ -851,7 +852,7 @@ int getSunPosition::sunPositionProcess(int init_num, std::string fileName, cv::P
 
     double xyLength = getXYlength(datatemp,200);
 
-    for (int frame_num = 0; frame_num < FRAME_SUM && !frame.empty(); frame_num++, capture >> frame)
+    for (int frame_num = 0; frame_num < nFrameEnd && !frame.empty(); frame_num++, capture >> frame)
     {
         std::cout << "Frame No."<< frame_num+init_num << std::endl;
         outPut << "#Frame No." <<frame_num+init_num<<std::endl;
@@ -2140,3 +2141,367 @@ void getSunPosition::adjustInteraction(cv::Point2f src_point[11], cv::Point2f ds
     return ;
 
 }
+void getSunPosition::setVideoFileName(std::string _filename)
+{
+	fileName = _filename;
+
+}
+void getSunPosition::setnFrameStart(int nfs)
+{
+	nFrameStart = nfs;
+}
+int getSunPosition::getnFrameStart()
+{
+	return nFrameStart;
+}
+void getSunPosition::setnFrameEnd(int nfe)
+{
+	nFrameEnd = nfe;
+}
+int getSunPosition::getnFrameEnd()
+{
+	return nFrameEnd;
+}
+cv::Mat getSunPosition::getFrameStart()
+{
+	cv::VideoCapture capture(fileName); // load video
+	std::cout << fileName << std::endl;
+	if (!capture.isOpened()) {
+		std::cout << "Failed to open video." << std::endl;
+		exit(1);
+	}
+	
+	for(int i = 1 ; i <=nFrameStart ; i++)//找到交互初始帧
+	{
+		capture >> FrameStart;
+	}
+	return FrameStart;
+
+}
+
+ int getSunPosition::sunPositionProcess(cv::Point2f point_data[])
+ {
+    cv::VideoCapture capture(fileName); // load video
+    std::cout << fileName << std::endl;
+    if (!capture.isOpened()) {
+        std::cout << "Failed to open video." << std::endl;
+        return -1;
+    }
+    std::ofstream outPut("out.txt");
+    if(!outPut.is_open())
+    {
+        std::cout<<"error occured while creating file out.txt"<<std::endl;
+        std::cout<<"program closed..."<<std::endl;
+        return -1;
+    }
+
+    
+	cv::Mat frame = getFrameStart();
+    cv::Point2f line_point[4][LINE_POINT_NUM];//线上的坐标点
+    int out_point_mark[11] , out_line_mark[4][LINE_POINT_NUM];//记录出界的信息点
+    for(int i = 0; i<11; i++)//默认所有点没出界
+    {
+        out_point_mark[i]=1;
+    }
+    for(int i = 0 ; i < 4 ;i++)
+    {
+        for(int j = 0 ; j < LINE_POINT_NUM ;j++)
+        {
+            out_line_mark[i][j]=1;
+        }
+    }
+    extend(point_data);//数据线过短时加以延长
+    find_line_point(point_data,line_point);//初始化线上的点
+
+    cv::VideoWriter writer("dst.avi", CV_FOURCC('M', 'J', 'P', 'G'), 8.0, cv::Size(frame.cols, frame.rows));
+    bool if_frame_break = false;
+    cv::Point2f v1,v2,vi;
+    double focal_length;
+    cv::Mat R = cv::Mat_<double>(3,3);
+    std::vector<cv::Point2d> datatemp;
+    datatemp.push_back(point_data[10]);
+    datatemp.push_back(point_data[11]);
+
+    double xyLength = getXYlength(datatemp,200);
+
+    for (int frame_num = 0; frame_num < nFrameEnd&& !frame.empty(); frame_num++, capture >> frame)
+    {
+        std::cout << "Frame No."<< frame_num+nFrameStart << std::endl;
+        outPut << "#Frame No." <<frame_num+nFrameStart <<std::endl;
+
+        cv::Point2f point[11];
+        for(int i=0; i<11; i++)
+        {
+            point[i] = point_data[i]-cv::Point2f(frame.cols*0.5, frame.rows*0.5);
+        }
+       // adjustInteraction(point, point);
+        v1 = getVanishPoint(point[0], point[1], point[2], point[3]);
+        v2 = getVanishPoint(point[4], point[5], point[6], point[7]);
+        focal_length = getFocalLength(v1, v2);
+
+
+        //get_vp_for_R(frame, pointVec, v1, v2, focal_length);
+
+        //adjust_vanishing_point(v1, v2, point[10], v1, v2);
+
+        cv::Point3f Xc, Yc, Zc;
+
+        get_rotation_mat( v1, v2,  focal_length, R);
+
+		//std::cout<<">> no adjust R = "<<R<<std::endl;
+        bool flag=adjust_rotation_matrix(R, R);
+        //std::cout<<">> adjust R "<<R<<std::endl;
+
+        /**compute translation vector*/
+        cv::Point2f origin;
+        origin.x = point_data[10].x-0.5*frame.cols;
+        origin.y = point_data[10].y-0.5*frame.rows;
+        /**bool get_translation_vector(const cv::Point2f origin, const cv::Point2f v1, const cv::Mat R, const double focal_length, double T[]);**/
+        double T[3] = {0,0,0};
+        if(!get_translation_vector(origin, v1, R, focal_length, T) )
+        {
+            std::cout<<">> error while computing T"<<std::endl;
+            continue;
+        }
+        //std::cout<<"T = "<<std::endl;
+       // std::cout<<T[0]<<", "<<T[1]<<", "<<T[2]<<std::endl;
+
+
+
+        /**get prarmeter in gluLookAt() function for openGL**/
+
+        cv::Mat t = cv::Mat_<double>(3,1);/**平移矩阵*/
+       /* if(std::isnan(T[0]))
+            break;*/
+
+        t.at<double>(0,0) = T[0];
+        t.at<double>(1,0) = T[1];
+        t.at<double>(2,0) = T[2];
+
+//
+//        std::cout<<">> R = "<<std::endl;
+//        std::cout<< R <<std::endl;
+//        std::cout<<">> T = "<<std::endl;
+//        std::cout<< t <<std::endl;
+
+        /***********************************  ************************************************************/
+        /**                      R, T 均已求出.                                                           *
+        *                                                                                                 *
+        ***************************************************************************************************/
+        double phi, theta;
+        double xxxx, yyyy;
+
+        cv::Point2d sunPos;
+        getSunPos(frame.rows, frame.cols, point_data, sunPos, theta, phi);
+        xxxx = (float)sunPos.x;
+        yyyy = (float)sunPos.y;
+
+
+        std::vector<cv::Point2f> triangle;
+        triangle.push_back(point_data[9]);
+        triangle.push_back(point_data[10]);
+        triangle.push_back(point_data[8]);
+		//std::cout<<"R="<<R<<std::endl;
+		//std::cout<<"T="<<t<<std::endl;
+		//std::cout<<"f="<<focal_length<<std::endl;
+        getAngle( R, t,focal_length ,triangle,theta,phi,frame.cols,frame.rows);
+        /**将参数坐标系转换成笛卡尔坐标系**/
+        double dex, dey, dez;
+
+
+         xyLength = xyLength;
+
+        //std::cout<<"xyLength:"<<xyLength<<std::endl;
+
+        para_to_decare( xyLength,phi, theta, dex, dey, dez);
+        //para_to_decare(10000,0.908, -0.082581, dex, dey, dez);
+        std::vector<cv::Point3d> objectPoints;
+        std::vector<cv::Point2d> imagePoints(3);
+        cv::Point3d Position;
+
+        Position.x = xyLength;
+        Position.y = 0;
+        Position.z = 0;
+        objectPoints.push_back(Position);
+
+        Position.x = 0;
+        Position.y = xyLength;
+        Position.z = 0;
+        objectPoints.push_back(Position);
+       /* Position.x = 0;
+        Position.y = 0;
+        Position.z = 100000;
+        objectPoints.push_back(Position);*/
+        Position.x = dex;
+        Position.y = dey;
+        Position.z = dez;
+        objectPoints.push_back(Position);
+
+        cv::Mat rVec(3, 1, cv::DataType<double>::type); // Rotation vector
+        cv::Rodrigues(R,rVec);
+        cv::Mat K = cv::Mat::zeros(cv::Size(3,3),CV_64F);
+        K.at<double>(0,0) = focal_length;
+        K.at<double>(1,1) = focal_length;
+        K.at<double>(0,2) = frame.cols/2.0;
+        K.at<double>(1,2) = frame.rows/2.0;
+        K.at<double>(2,2) = 1.0;
+
+        //cv::Mat distCoeffs(5, 1, cv::DataType<double>::type);   // Distortion vector
+        cv::Mat distCoeffs = cv::Mat::zeros(cv::Size(5,1),CV_64F);
+        cv::projectPoints(objectPoints,rVec,t,K,distCoeffs,imagePoints);
+//		world2img(R, t,focal_length,objectPoints[1],imagePoints[1]); //compute the image
+//		world2img(R, t,focal_length,objectPoints[0],imagePoints[0]);
+//		world2img(R, t,focal_length,objectPoints[2],imagePoints[2]);
+		//world2img(R, t,focal_length,objectPoints[3],imagePoints[3]);
+      /*  std::cout<<">> x-axis = "<<std::endl;
+        std::cout<<imagePoints[0].x<<", "<<imagePoints[0].y<<std::endl;
+        std::cout<<">> y-axis = "<<std::endl;
+        std::cout<<imagePoints[1].x<<", "<<imagePoints[1].y<<std::endl;
+        std::cout<<">> z-axis = "<<std::endl;
+        std::cout<<imagePoints[2].x<<", "<<imagePoints[2].y<<std::endl;
+        std::cout<<">> sun position = "<<std::endl;
+        std::cout<<imagePoints[3].x<<", "<<imagePoints[3].y<<std::endl;*/
+//        cv::line(frame,point_data[10],imagePoints[0],cv::Scalar(0,255,0),2,8);
+//        cv::line(frame,point_data[10],imagePoints[1],cv::Scalar(255,0,0),2,8);
+//        cv::line(frame,point_data[10],imagePoints[2],cv::Scalar(0,255,255),2,8);
+     //  cv::line(frame,point_data[10],imagePoints[3],cv::Scalar(0,0,0),2,8);
+//        cv::line(frame,point_data[10], cv::Point(592,207), cv::Scalar(34,35,23));
+//        cv::line(frame,point_data[10], cv::Point(-2046, -14615), cv::Scalar(255,135,23));
+        /**sun direction in world coordinate*/
+        cv::Mat Pw = cv::Mat_<double>(4,1);  /**世界坐标系下太阳位置**/
+        static cv::Mat P0c = cv::Mat_<double>(4,1);/**初始帧相机坐标*/
+        cv::Mat Pc = cv::Mat_<double>(4,1); /**当前帧相机坐标*/
+        //cv::Mat t = cv::Mat_<double>(3,1);  /**平移矩阵*/
+        static cv::Mat M0 = cv::Mat_<double>(4,4);
+        cv::Mat M  = cv::Mat_<double>(4,4);
+
+        Pw.at<double>(0,0) = dex;
+        Pw.at<double>(1,0) = dey;
+        Pw.at<double>(2,0) = dez;
+        Pw.at<double>(3,0) = 1.0;
+
+        t.at<double>(0,0) = T[0];
+        t.at<double>(1,0) = T[1];
+        t.at<double>(2,0) = T[2];
+
+        if(frame_num == 0) /**第一帧*/
+        {
+            /**switch to camera coordinate*/
+            switch_to_cam_coordinate(Pw, R, t, P0c, M0);
+            cv::Mat P = cv::Mat_<double>(3,1);
+            P.at<double>(0,0) = P0c.at<double>(0,0);
+            P.at<double>(1,0) = P0c.at<double>(1,0);
+            P.at<double>(2,0) = P0c.at<double>(2,0);
+            outPut<<"# Sun Position in World Coordinate = "<<std::endl;
+            outPut<<"("<<Pw.at<double>(0,0)<<", "<<Pw.at<double>(1,0)<<", "<<Pw.at<double>(2,0)<<")"<<std::endl;
+
+            cv::normalize(P,P);
+            outPut<<"# Sun position in camera coordinate = "<<std::endl;
+            outPut<<"("<<P.at<double>(0,0)<<", "<<P.at<double>(1,0)<<", "<<P.at<double>(2,0)<<")"<<std::endl;
+            //outPut<<P<<std::endl;
+//            cv::normalize(P,P);
+//            outPut  << "#Direction = " <<std::endl;
+//            outPut<<P<<std::endl;
+        }
+        else
+        {
+            /**switch to camera coordinate*/
+            switch_to_cam_coordinate(Pw, R, t, Pc,M);
+            cv::Mat P = cv::Mat_<double>(3,1);
+            P.at<double>(0,0) = Pc.at<double>(0,0);
+            P.at<double>(1,0) = Pc.at<double>(1,0);
+            P.at<double>(2,0) = Pc.at<double>(2,0);
+
+//            std::cout<<">> Relation Matrix = "<<std::endl;
+//            std::cout<<M*M0.inv()<<std::endl;
+//
+//            outPut << "#Relation Matrix = " <<std::endl;
+//            outPut << M*M0.inv() <<std::endl;
+
+//            std::cout<<">> T = "<<std::endl;
+//            std::cout<<t<<std::endl;
+            cv::normalize(P,P);
+            outPut<<"# Sun Position in camera coordinate = "<<std::endl;
+            outPut<<"("<<P.at<double>(0,0)<<", "<<P.at<double>(1,0)<<", "<<P.at<double>(2,0)<<")"<<std::endl;
+//            cv::normalize(P, P);
+//            std::cout<<P<<std::endl;
+        }
+
+
+        cv::Point2f point_data1[11];
+        for (int i = 0; i < 11; i++)
+        {
+            point_data1[i] = point_data[i];
+        }
+
+        int out_point_num = -1;  //记录是否有信息点出界
+
+        tracking(frame,point_data1,out_point_mark,line_point,out_line_mark);//光流跟踪
+        fitline_reAllocation(point_data1,line_point);//直线拟合，重分配点
+
+        for(int i=0 ; i < 11 ; i++)//判断是否有点出界
+        {
+            if(out_point_mark[i])
+            {
+                if(point_data1[i].x > frame.cols || point_data1[i].x < 0 || point_data1[i].y > frame.rows || point_data1[i].y < 0)
+                {
+                    out_point_mark[i] = 0 ;
+                    out_point_num = i ;
+                }
+            }
+
+        }
+        for(int i = 0 ; i < 4 ;i++)
+        {
+            for(int j = 0 ; j < LINE_POINT_NUM ;j++)
+            {
+                if(out_line_mark[i][j])
+                {
+                    if(line_point[i][j].x > frame.cols ||line_point[i][j].x < 0 || line_point[i][j].y > frame.rows || line_point[i][j].y < 0)
+                    {
+                        out_line_mark[i][j] = 0 ;
+//                           QMessageBox::warning(NULL, "warning", "Line's points is out of the video's boundary", QMessageBox::Yes , QMessageBox::Yes);
+//                           if_frame_break = true;
+                    }
+                }
+
+            }
+        }
+        if_frame_break = reAllocation(frame, point_data1,out_point_mark,line_point,out_line_mark);
+
+
+            if (out_point_num >= 8)
+            {
+                std::cout<<"people's point is out of frame"<<std::endl;
+                if_frame_break = true;
+            }//人及影子的信息点出界直接判断不能继续运行
+
+            if(if_frame_break == true)
+            {
+                std::cout<<"some point is out of frame"<<std::endl;
+                break ;
+            }
+
+
+        for (int i = 0; i < 11; i++)
+        {
+            point_data[i] = point_data1[i];
+        }
+
+		//draw_coordinate_sys(point_data, frame, xxxx ,yyyy);
+		draw_coordinate_sys(point_data,frame,imagePoints ,flag);
+	//	draw_coordinate_sys(point_data, frame,flag , xxxx ,yyyy);
+
+        draw_line_2(frame,point_data,out_point_mark,line_point,out_line_mark);
+
+        writer << frame;
+        cv::imshow("readvideo",frame);
+        //cv::VideoWriter writer("dst.avi", CV_FOURCC('M', 'J', 'P', 'G'), 15.0, cv::Size(frame.cols, frame.rows));
+        cv::waitKey(200);
+        std::cout<<"process succeeded..."<<std::endl;
+
+    }
+    outPut.close();
+    gray_prev.release();
+    return 0;
+ }

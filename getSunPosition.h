@@ -3,19 +3,19 @@
 #pragma once
 
 #include <iostream>
-#include <string>
 #include <cmath>
 #include <fstream>
 #include <opencv/cv.h>
 #include <opencv/highgui.h>
 #include <opencv.hpp>
 #include <vector>
+#include<string.h>
 
 #define SCALE 100
 #define LINE_POINT_NUM 18
 
 static const float PI = 3.1415926;
-static const int FRAME_SUM =  150;
+
 typedef CvPoint3D64f XgyVector3D;
 class getSunPosition
 {
@@ -48,10 +48,14 @@ private:
    }XgyPlane;
 public:
 	 double sunAzimuth;//方位角
-    double sunZenith;
+     double sunZenith;
      double sunAltitude;//高度角，太阳方向和地面的夹角
 	 double width;
-  double height;
+     double height;
+     int nFrameEnd ;//endframe
+     int nFrameStart ;//startframe
+	 std::string fileName; //videoinput
+	 cv::Mat FrameStart; //initialframe
 private:
 	void Calibrate(cv::Mat frame, cv::Point2f data_point[11], double &focal_length, cv::Mat &R, cv::Mat &T);
 	void find_line_point(cv::Point2f data[11], cv::Point2f line_point[4][LINE_POINT_NUM]);
@@ -120,9 +124,15 @@ private:
     int draw_coordinate_sys(cv::Point2f point_data[11], cv::Mat &frame,bool change_flag ,float x , float y);
 	void draw_line_2(cv::Mat & temp , cv::Point2f data[11] ,int out_point_mark[11] , cv::Point2f line_point[4][LINE_POINT_NUM] , int out_line_mark[4][LINE_POINT_NUM]);
 public:
+	void setVideoFileName(std::string _filename);
+	void setnFrameStart(int nfs);
+	int getnFrameStart();
+	void setnFrameEnd(int nfe);
+	int getnFrameEnd();
+	cv::Mat getSunPosition::getFrameStart();
 	// point_data should have 11 elements
     int sunPositionProcess(int init_num, std::string fileName, cv::Point2f point_data[]);
-    
+    int sunPositionProcess(cv::Point2f point_data[]);
 
 };
 

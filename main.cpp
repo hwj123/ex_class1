@@ -62,9 +62,14 @@ int main(int args, char *argv[])
     }
     while (pos1 != string::npos && pos2 != string::npos);
     std::cout<<"init num = "<<init_num<<std::endl;
-	getSunPosition gsp;
-    gsp.sunPositionProcess(init_num, fileName, points);
-
+	/*getSunPosition gsp;
+	gsp.setnFrameEnd(20);
+    gsp.sunPositionProcess(init_num, fileName, points);*/
+	getSunPosition gsp1;
+	gsp1.setVideoFileName(fileName);
+	gsp1.setnFrameEnd(20);
+	gsp1.setnFrameStart(1);
+	gsp1.sunPositionProcess(points);
 	system("pause");
     return 0;
 
